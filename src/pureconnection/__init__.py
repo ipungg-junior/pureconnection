@@ -1,3 +1,8 @@
-from .controller import Pure
+# src/pureconnection/__init__.py
 
-__all__ = ['Pure']
+# This is make Class open to Public API
+# from pureconnection import PrettyPrinter
+
+from .utils import PrettyPrinter
+
+__all__ = ["PrettyPrinter"]
