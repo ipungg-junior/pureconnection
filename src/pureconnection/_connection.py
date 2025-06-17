@@ -1,140 +1,121 @@
-# src/proyekku/tcp_client.py
-
 import socket
 import threading
-import time
 import struct
-
+import time
 
 class RemoteHost:
     _host = None
     _port = None
-    _retry_interval = 5
     _sock = None
     _connected = False
-    _lock = threading.Lock()
-    _stop = False
     _on_message = None
-    _reconnect_thread = None
     _receiver_thread = None
+    _reconnect_thread = None
+    _stop = False
 
     @classmethod
-    def configure(cls, host, port, retry_interval=5):
+    def configure(cls, host, port):
         cls._host = host
         cls._port = port
-        cls._retry_interval = retry_interval
-
-    @classmethod
-    def begin_connection(cls):
-        cls._stop = False
-
-        if not cls._reconnect_thread or not cls._reconnect_thread.is_alive():
-            cls._reconnect_thread = threading.Thread(target=cls._maintain_connection, daemon=True)
-            cls._reconnect_thread.start()
-
-        if not cls._receiver_thread or not cls._receiver_thread.is_alive():
-            cls._receiver_thread = threading.Thread(target=cls._receiver_loop, daemon=True)
-            cls._receiver_thread.start()
-
-    @classmethod
-    def _maintain_connection(cls):
-        while not cls._stop:
-            if not cls._connected:
-                try:
-                    print(f"🔌 Connecting to {cls._host}:{cls._port} ...")
-                    cls._connect()
-                    print("✅ Connected!")
-                except Exception as e:
-                    print(f"❌ Connection failed: {e}")
-            time.sleep(cls._retry_interval)
-
-    @classmethod
-    def _connect(cls):
-        with cls._lock:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(5)  # Biar gak ngegantung selamanya
-                s.connect((cls._host, cls._port))
-                s.settimeout(None)  # Balikin ke blocking normal
-                if s:
-                    cls._sock = s
-                    cls._connected = True
-                else:
-                    cls._connected = False
-            except Exception as e:
-                cls._connected = False
-                raise e
-
-
-    @classmethod
-    def send(cls, message: str):
-        if not cls._connected or not cls._sock:
-            print("⚠️ Tidak terkoneksi, kirim dibatalkan.")
-            return
-        payload = message.encode('utf-8')
-        header = struct.pack('>I', len(payload))
-        try:
-            with cls._lock:
-                cls._sock.sendall(header + payload)
-        except Exception as e:
-            print(f"❌ Send failed: {e}")
-            cls._connected = False
-
-
-    @classmethod
-    def recv(cls):
-        try:
-            with cls._lock:
-                header = cls._recv_all(4)
-                if not header:
-                    cls._connected = False
-                    return None
-                length = struct.unpack('>I', header)[0]
-                data = cls._recv_all(length)
-                return data.decode('utf-8') if data else None
-        except Exception as e:
-            print(f"❌ Receive failed: {e}")
-            cls._connected = False
-            return None
-
-    @classmethod
-    def _recv_all(cls, n):
-        data = b''
-        while len(data) < n:
-            try:
-                packet = cls._sock.recv(n - len(data))
-            except:
-                return None
-            if not packet:
-                return None
-            data += packet
-        return data
-
-    @classmethod
-    def _receiver_loop(cls):
-        while not cls._stop:
-            if cls._connected:
-                msg = cls.recv()
-                if msg and cls._on_message:
-                    try:
-                        cls._on_message(msg)
-                    except Exception as e:
-                        print(f"⚠️ Callback error: {e}")
-            else:
-                time.sleep(1)
 
     @classmethod
     def receiver_handler(cls, callback):
         cls._on_message = callback
 
     @classmethod
-    def close(cls):
-        cls._stop = True
-        with cls._lock:
-            if cls._sock:
-                try:
-                    cls._sock.close()
-                except:
-                    pass
-                cls._sock = None
+    def begin_connection(cls):
+        cls._stop = False
+        cls._reconnect_thread = threading.Thread(target=cls._reconnect_loop, daemon=True)
+        cls._reconnect_thread.start()
+
+    @classmethod
+    def _connect(cls):
+        try:
+            cls._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            cls._sock.settimeout(5)
+            cls._sock.connect((cls._host, cls._port))
+            cls._sock.settimeout(None)
+            cls._connected = True
+            print(f"✅ Connected to {cls._host}:{cls._port}")
+            cls._receiver_thread = threading.Thread(target=cls._receiver_loop, daemon=True)
+            cls._receiver_thread.start()
+        except Exception as e:
             cls._connected = False
+            print(f"❌ Connect failed: {e}")
+
+    @classmethod
+    def _reconnect_loop(cls):
+        while not cls._stop:
+            if not cls._connected:
+                print(f"🔁 Trying to connect to {cls._host}:{cls._port}")
+                cls._connect()
+            time.sleep(2)
+
+    @classmethod
+    def _receiver_loop(cls):
+        print("📡 Receiver started")
+        while cls._connected and not cls._stop:
+            try:
+                header = cls._recv_all(4)
+                if not header:
+                    raise ConnectionResetError("Lost header")
+                length = struct.unpack('>I', header)[0]
+                data = cls._recv_all(length)
+                if not data:
+                    raise ConnectionResetError("Lost payload")
+                message = data.decode('utf-8')
+                print(f"📩 Received: {message}")
+                if cls._on_message:
+                    cls._on_message(message)
+            except Exception as e:
+                print(f"⚠️ Receiver error: {e}")
+                cls._connected = False
+                if cls._sock:
+                    cls._sock.close()
+                    cls._sock = None
+                break
+
+    @classmethod
+    def _recv_all(cls, n):
+        data = b''
+        while len(data) < n:
+            part = cls._sock.recv(n - len(data))
+            if not part:
+                return None
+            data += part
+        return data
+
+    @classmethod
+    def send(cls, message: str):
+        if not cls._connected or not cls._sock:
+            print("⚠️ Not connected, cannot send.")
+            return
+        payload = message.encode('utf-8')
+        header = struct.pack('>I', len(payload))
+        try:
+            cls._sock.sendall(header + payload)
+        except Exception as e:
+            print(f"❌ Send failed: {e}")
+            cls._connected = False
+            if cls._sock:
+                cls._sock.close()
+                cls._sock = None
+
+    @classmethod
+    def is_connected(cls):
+        return cls._connected
+
+    @classmethod
+    def wait_until_connected(cls, timeout=10):
+        start = time.time()
+        while not cls._connected:
+            if time.time() - start > timeout:
+                raise TimeoutError("Timeout waiting for connection.")
+            time.sleep(0.1)
+
+    @classmethod
+    def stop(cls):
+        cls._stop = True
+        if cls._sock:
+            cls._sock.close()
+        cls._connected = False
