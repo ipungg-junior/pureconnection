@@ -51,13 +51,26 @@ class RemoteHost:
     @classmethod
     def _connect(cls):
         with cls._lock:
-            cls._sock = socket.create_connection((cls._host, cls._port))
-            cls._connected = True
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(5)  # Biar gak ngegantung selamanya
+                s.connect((cls._host, cls._port))
+                s.settimeout(None)  # Balikin ke blocking normal
+                if s:
+                    cls._sock = s
+                    cls._connected = True
+                else:
+                    cls._connected = False
+            except Exception as e:
+                cls._connected = False
+                raise e
+
 
     @classmethod
     def send(cls, message: str):
-        if not cls._connected:
-            raise RuntimeError("Not connected to server.")
+        if not cls._connected or not cls._sock:
+            print("⚠️ Tidak terkoneksi, kirim dibatalkan.")
+            return
         payload = message.encode('utf-8')
         header = struct.pack('>I', len(payload))
         try:
@@ -66,6 +79,7 @@ class RemoteHost:
         except Exception as e:
             print(f"❌ Send failed: {e}")
             cls._connected = False
+
 
     @classmethod
     def recv(cls):
