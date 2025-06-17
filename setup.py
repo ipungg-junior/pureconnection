@@ -8,12 +8,10 @@ setup(
     author='Muhammad Thoyfur',
     author_email='ipungg.id@gmail.com',
     install_requires=[  # Daftar dependensi yang diperlukan
-        'redis',
-        'mysqlclient'
     ],
-    description='Lightweight realtime database (long-polling)',
+    description='Lightweight realtime database',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     url='https://github.com/ipungg-junior/pureconnection',  # URL proyek (misalnya GitHub)
-    python_requires='>=3.6',          # Versi Python yang didukung
+    python_requires='>=3.9',          # Versi Python yang didukung
 )
