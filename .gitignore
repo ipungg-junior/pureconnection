@@ -1,3 +1,4 @@
 dist/*
 test/*
 src/pureconnection.egg-info/
+auto_update_pypi.sh

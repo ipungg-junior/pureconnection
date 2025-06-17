@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='pureconnection',               # Nama paket
-    version='3.0.0',                 # Versi paket
+    version='3.1.0',                 # Versi paket
     packages=find_packages(),        # Temukan semua paket Python dalam direktori
     test_suite='tests',              # Menentukan lokasi test
     author='Muhammad Thoyfur',
